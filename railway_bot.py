@@ -52,163 +52,160 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', str(text))
     return text.strip()
 
-def extract_last_date(text):
-    """Extract last date from text like 'Last Date: 11 Apr 2026'"""
-    match = re.search(r'Last Date:\s*(\d{1,2}\s+\w+\s+\d{4})', text, re.I)
-    if match:
-        return match.group(1)
-    return 'Check official website'
-
-def extract_salary(text):
-    """Extract salary from text"""
-    # Look for patterns like "₹14,411" or "Salary ₹14,411"
-    match = re.search(r'[₹$][\d,]+', text)
-    if match:
-        return match.group(0)
-    # Look for salary range
-    match = re.search(r'Salary\s*[₹$]?([\d,\-\s]+)', text, re.I)
-    if match:
-        return f"₹{match.group(1)}"
-    return 'As per norms'
-
-def extract_org_and_vacancies(text):
-    """Extract organization and vacancies"""
-    # Pattern: "Org: Railway" or "State: Uttar Pradesh"
-    org_match = re.search(r'(?:Org|Organization|State|Ministry|Department):\s*([^\n]+)', text, re.I)
-    org = org_match.group(1).strip() if org_match else 'Government'
-    
-    # Pattern: "Vacancy: 2801"
-    vac_match = re.search(r'Vacancy:\s*(\d+)', text, re.I)
-    vacancies = vac_match.group(1) if vac_match else ''
-    
-    return clean_text(org), vacancies
-
-def check_if_today(update_date):
-    """Check if job was updated today"""
+def scrape_individual_job_page(job_url):
+    """Scrape individual job page for FULL details"""
     try:
-        # Pattern: "Updated on 15 Mar 2026"
-        match = re.search(r'Updated on\s+(\d{1,2}\s+\w+\s+\d{4})', update_date, re.I)
-        if match:
-            date_str = match.group(1)
-            posted_date = datetime.strptime(date_str, '%d %b %Y').strftime('%Y-%m-%d')
-            today = datetime.now().strftime('%Y-%m-%d')
-            return posted_date == today
-    except:
-        pass
-    # If no date found, include it anyway
-    return True
+        logger.info(f"    🔍 Scraping: {job_url[:50]}...")
+        
+        session = requests.Session()
+        response = session.get(job_url, headers=HEADERS, timeout=15)
+        
+        if response.status_code != 200:
+            return None
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        page_text = soup.get_text()
+        
+        # Extract eligibility
+        eligibility = 'Check official website'
+        elig_patterns = [
+            r'(?:Eligibility|Qualification|Education):\s*([^\n]+)',
+            r'(?:Eligible|Required):\s*([^\n]+)',
+        ]
+        for pattern in elig_patterns:
+            match = re.search(pattern, page_text, re.I)
+            if match:
+                eligibility = clean_text(match.group(1))[:80]
+                break
+        
+        # Extract salary/stipend
+        salary = 'As per norms'
+        sal_patterns = [
+            r'(?:Salary|Pay|Stipend|CTC|Pay Scale):\s*([₹$\d,\-\s.k]+)',
+            r'[₹$][\d,]+(?:\s*-\s*[₹$]?[\d,]+)?',
+        ]
+        for pattern in sal_patterns:
+            match = re.search(pattern, page_text, re.I)
+            if match:
+                salary = clean_text(match.group(0) if '\d' in match.group(0) else match.group(1))[:80]
+                break
+        
+        # Extract last date
+        last_date = 'Check official website'
+        date_patterns = [
+            r'(?:Last Date|Deadline|Apply Before|Application Deadline):\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}\s+\w+\s+\d{4})',
+            r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})',
+        ]
+        for pattern in date_patterns:
+            match = re.search(pattern, page_text, re.I)
+            if match:
+                last_date = clean_text(match.group(1))[:30]
+                break
+        
+        # Extract vacancies
+        vacancies = ''
+        vac_match = re.search(r'(?:Vacancies|Posts?):\s*(\d+)', page_text, re.I)
+        if vac_match:
+            vacancies = vac_match.group(1)
+        
+        return {
+            'eligibility': eligibility,
+            'salary': salary,
+            'last_date': last_date,
+            'vacancies': vacancies
+        }
+        
+    except Exception as e:
+        logger.debug(f"    Error scraping page: {e}")
+        return None
 
-def scrape_govtjobsalerts():
-    """Scrape govtjobsalerts.in for latest jobs"""
+def scrape_homepage_jobs():
+    """Scrape homepage for job listings"""
     jobs = []
     
     try:
-        logger.info("📡 Scraping govtjobsalerts.in...")
+        logger.info("📡 Scraping govtjobsalerts.in homepage...")
         
         url = "https://www.govtjobsalerts.in"
         session = requests.Session()
         response = session.get(url, headers=HEADERS, timeout=20)
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Find all job containers - they are divs with job-post class or similar structure
-            # Based on screenshot, each job is in a bordered container
-            job_containers = soup.find_all('div', class_=re.compile(r'job|post|card|item', re.I))
-            
-            if not job_containers:
-                # Alternative: find by structure - JOB POST button + title + details
-                job_containers = soup.find_all('div', limit=100)
-            
-            logger.info(f"  Scanning {len(job_containers)} potential containers...")
-            
-            for container in job_containers:
-                try:
-                    # Look for title (usually h2 or h3 or a tag with blue color)
-                    title_elem = container.find(['h2', 'h3', 'h4', 'a'], class_=re.compile(r'title|heading|job', re.I))
-                    
-                    if not title_elem:
-                        # Try to find any link in the container
-                        title_elem = container.find('a')
-                    
-                    if not title_elem:
-                        continue
-                    
-                    title_text = clean_text(title_elem.get_text())
-                    
-                    # Must contain job keywords
-                    job_keywords = ['recruitment', 'notification', 'exam', 'vacancy', 'apply', 'admit', 'post', 'job']
-                    if not any(kw in title_text.lower() for kw in job_keywords):
-                        continue
-                    
-                    # Get the link
-                    link_elem = container.find('a', href=True)
-                    if not link_elem:
-                        continue
-                    
-                    official_link = link_elem.get('href', '')
-                    if not official_link or not official_link.startswith('http'):
-                        continue
-                    
-                    # Get full container text for details extraction
-                    container_text = container.get_text()
-                    
-                    # Extract details
-                    last_date = extract_last_date(container_text)
-                    salary = extract_salary(container_text)
-                    org, vacancies = extract_org_and_vacancies(container_text)
-                    
-                    # Extract update date to check if posted today
-                    is_today = check_if_today(container_text)
-                    
-                    # Extract eligibility from title or details
-                    eligibility = 'Check official website'
-                    # Sometimes eligibility is in the title
-                    if 'iti' in title_text.lower():
-                        eligibility = 'ITI Pass'
-                    elif '12th' in title_text.lower():
-                        eligibility = '12th Pass'
-                    elif 'graduation' in title_text.lower() or 'degree' in title_text.lower():
-                        eligibility = 'Bachelor\'s Degree'
-                    
-                    if is_today:
-                        job = {
-                            'id': clean_text(official_link),  # Use link as unique ID
-                            'title': title_text[:250],
-                            'organization': org,
-                            'vacancies': vacancies,
-                            'eligibility': eligibility,
-                            'salary': salary,
-                            'last_date': last_date,
-                            'link': official_link
-                        }
-                        
-                        # Avoid duplicates
-                        if not any(j['link'] == official_link for j in jobs):
-                            jobs.append(job)
-                            logger.info(f"  ✓ {title_text[:50]}...")
-                
-                except Exception as e:
-                    logger.debug(f"  Error: {e}")
-                    continue
-            
-            logger.info(f"  ✓ Total: {len(jobs)} jobs from today")
-        else:
+        if response.status_code != 200:
             logger.warning(f"  Status: {response.status_code}")
-    
+            return jobs
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find all links that are job listings
+        all_links = soup.find_all('a', href=True, limit=100)
+        
+        logger.info(f"  Found {len(all_links)} links, filtering for jobs...")
+        
+        for link in all_links:
+            try:
+                title = clean_text(link.get_text())
+                href = link.get('href', '').strip()
+                
+                # Filter: must be a valid URL and contain job keywords
+                if not href or len(title) < 15:
+                    continue
+                
+                if not href.startswith('http'):
+                    if href.startswith('/'):
+                        href = 'https://www.govtjobsalerts.in' + href
+                    else:
+                        continue
+                
+                # Skip govtjobsalerts links (we want official org links)
+                if 'govtjobsalerts.in' in href:
+                    continue
+                
+                # Check for job keywords
+                job_keywords = ['recruitment', 'notification', 'exam', 'vacancy', 'apply', 'admit', 'post', 'job', 'bharti']
+                if not any(kw in title.lower() for kw in job_keywords):
+                    continue
+                
+                # Skip if already processed
+                if href in [j['link'] for j in jobs]:
+                    continue
+                
+                # Now scrape the INDIVIDUAL JOB PAGE
+                details = scrape_individual_job_page(href)
+                
+                if details:
+                    job = {
+                        'title': title[:250],
+                        'link': href,
+                        'eligibility': details['eligibility'],
+                        'salary': details['salary'],
+                        'last_date': details['last_date'],
+                        'vacancies': details['vacancies'],
+                        'id': href  # Use URL as unique ID
+                    }
+                    jobs.append(job)
+                    logger.info(f"  ✓ {title[:50]}...")
+                
+                # Add small delay between requests
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.debug(f"  Error: {e}")
+                continue
+        
+        logger.info(f"  ✓ Total jobs with full details: {len(jobs)}")
+        
     except Exception as e:
         logger.error(f"  Error: {str(e)[:50]}")
     
     return jobs
 
 def create_message(job):
-    """Create professional job post"""
+    """Create professional job post with all details"""
     
     message = f"""
 📢 <b>{job['title']}</b>
 
-🏢 <b>Organization:</b> {job['organization']}
-📌 <b>Vacancies:</b> {job['vacancies']}
+📌 <b>Vacancies:</b> {job['vacancies'] if job['vacancies'] else 'Multiple'}
 🎓 <b>Eligibility:</b> {job['eligibility']}
 💰 <b>Salary:</b> {job['salary']}
 🗓️ <b>Last Date:</b> {job['last_date']}
@@ -228,33 +225,37 @@ async def send_to_channel(message):
 
 async def check_and_post_jobs():
     logger.info("=" * 70)
-    logger.info("🤖 GOVT JOBS ALERT - LATEST JOBS ONLY")
+    logger.info("🤖 GOVT JOBS ALERT - HOURLY SCAN")
     logger.info("=" * 70)
     
     posted = load_posted_jobs()
     logger.info(f"✓ Cache: {len(posted)} jobs")
     
-    jobs = scrape_govtjobsalerts()
+    jobs = scrape_homepage_jobs()
     
     if not jobs:
         logger.warning("⚠️ No jobs found")
         return
     
-    logger.info(f"✓ Checking {len(jobs)} jobs")
+    logger.info(f"✓ Found {len(jobs)} jobs with full details")
     
     count = 0
     for job in jobs:
         if job['id'] not in posted:
-            logger.info(f"📤 {job['title'][:40]}...")
+            logger.info(f"📤 Posting: {job['title'][:40]}...")
             msg = create_message(job)
             success = await send_to_channel(msg)
             
             if success:
                 save_posted_job(job['id'])
                 count += 1
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
     
-    logger.info(f"✓ Posted: {count} NEW jobs")
+    if count == 0:
+        logger.info("✓ No new jobs to post")
+    else:
+        logger.info(f"✓ Posted {count} NEW jobs! 🎉")
+    
     logger.info("=" * 70)
 
 def job_scheduler():
@@ -263,10 +264,12 @@ def job_scheduler():
 def main():
     logger.info("🚂 BOT STARTED")
     logger.info("Source: govtjobsalerts.in")
-    logger.info("Posts: Latest jobs only (updated today)")
+    logger.info("Mode: Scrapes individual job pages for FULL details")
+    logger.info("Schedule: Every hour")
     logger.info("=" * 70)
     
-    schedule.every(5).minutes.do(job_scheduler)
+    # Run every hour
+    schedule.every(1).hour.do(job_scheduler)
     
     while True:
         schedule.run_pending()
