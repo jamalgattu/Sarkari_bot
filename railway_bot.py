@@ -56,7 +56,7 @@ def scrape_freejobsalert():
     jobs = []
     try:
         logger.info("📡 Scraping freejobsalert.com...")
-        url = "https://www.freejobsalert.com"
+        url = "https://www.govtjobsalert.in"
         response = requests.get(url, headers=HEADERS, timeout=20)
         
         if response.status_code == 200:
@@ -206,7 +206,7 @@ def job_scheduler():
 
 def main():
     logger.info("🚂 BOT STARTED")
-    logger.info("Source: freejobsalert.com")
+    logger.info("Source: govtjobsalert.in")
     logger.info("Posts: Latest jobs only")
     logger.info("=" * 70)
     
