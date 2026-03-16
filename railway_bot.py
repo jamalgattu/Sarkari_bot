@@ -53,74 +53,71 @@ def clean_text(text):
     return text.strip()
 
 def scrape_individual_job_page(job_url):
-    """Scrape individual job page for FULL details"""
+    """Scrape individual job page for full details"""
+    details = {
+        'eligibility': 'Check official website',
+        'salary': 'As per norms',
+        'last_date': 'Check official website',
+        'vacancies': ''
+    }
+    
     try:
-        logger.info(f"    🔍 Scraping: {job_url[:50]}...")
-        
         session = requests.Session()
         response = session.get(job_url, headers=HEADERS, timeout=15)
         
         if response.status_code != 200:
-            return None
+            logger.warning(f"      ⚠️ Could not scrape page (Status {response.status_code})")
+            return details
         
         soup = BeautifulSoup(response.content, 'html.parser')
         page_text = soup.get_text()
         
         # Extract eligibility
-        eligibility = 'Check official website'
         elig_patterns = [
-            r'(?:Eligibility|Qualification|Education):\s*([^\n]+)',
-            r'(?:Eligible|Required):\s*([^\n]+)',
+            r'(?:Eligibility|Qualification|Education|Eligible):\s*([^\n]+)',
         ]
         for pattern in elig_patterns:
             match = re.search(pattern, page_text, re.I)
             if match:
-                eligibility = clean_text(match.group(1))[:80]
+                details['eligibility'] = clean_text(match.group(1))[:80]
                 break
         
         # Extract salary/stipend
-        salary = 'As per norms'
         sal_patterns = [
-            r'(?:Salary|Pay|Stipend|CTC|Pay Scale):\s*([₹$\d,\-\s.k]+)',
-            r'[₹$][\d,]+(?:\s*-\s*[₹$]?[\d,]+)?',
+            r'(?:Salary|Pay|Stipend|CTC|Pay Scale|Pay Level):\s*([₹$\d,\-\s.k+]+)',
+            r'[₹][\d,]+(?:\s*(?:\+|-)\s*[₹]?[\d,]+)?',
         ]
         for pattern in sal_patterns:
             match = re.search(pattern, page_text, re.I)
             if match:
-                salary = clean_text(match.group(0) if '\d' in match.group(0) else match.group(1))[:80]
+                salary_text = match.group(0) if '\d' in match.group(0) else match.group(1)
+                details['salary'] = clean_text(salary_text)[:80]
                 break
         
         # Extract last date
-        last_date = 'Check official website'
         date_patterns = [
-            r'(?:Last Date|Deadline|Apply Before|Application Deadline):\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}\s+\w+\s+\d{4})',
-            r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})',
+            r'(?:Last Date|Deadline|Apply Before|Application Deadline|Last Date to Apply):\s*(\d{1,2}[/-]?\s*\w+\s*[/-]?\s*\d{4}|\d{1,2}\s+\w+\s+\d{4})',
         ]
         for pattern in date_patterns:
             match = re.search(pattern, page_text, re.I)
             if match:
-                last_date = clean_text(match.group(1))[:30]
+                details['last_date'] = clean_text(match.group(1))[:30]
                 break
         
         # Extract vacancies
-        vacancies = ''
-        vac_match = re.search(r'(?:Vacancies|Posts?):\s*(\d+)', page_text, re.I)
+        vac_match = re.search(r'(?:Vacancies|Total Vacancies|Posts?):\s*(\d+)', page_text, re.I)
         if vac_match:
-            vacancies = vac_match.group(1)
+            details['vacancies'] = vac_match.group(1)
         
-        return {
-            'eligibility': eligibility,
-            'salary': salary,
-            'last_date': last_date,
-            'vacancies': vacancies
-        }
+        logger.info(f"      ✓ Scraped details successfully")
+        return details
         
     except Exception as e:
-        logger.debug(f"    Error scraping page: {e}")
-        return None
+        logger.warning(f"      ⚠️ Error scraping page: {str(e)[:40]}")
+        return details
 
-def scrape_homepage_jobs():
-    """Scrape homepage for job listings"""
+def get_top_5_jobs():
+    """Get TOP 5 jobs from homepage"""
     jobs = []
     
     try:
@@ -136,17 +133,22 @@ def scrape_homepage_jobs():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Find all links that are job listings
+        # Find all links
         all_links = soup.find_all('a', href=True, limit=100)
         
         logger.info(f"  Found {len(all_links)} links, filtering for jobs...")
         
+        job_count = 0
+        
         for link in all_links:
+            if job_count >= 5:  # ONLY TOP 5
+                break
+            
             try:
                 title = clean_text(link.get_text())
                 href = link.get('href', '').strip()
                 
-                # Filter: must be a valid URL and contain job keywords
+                # Basic validation
                 if not href or len(title) < 15:
                     continue
                 
@@ -161,38 +163,29 @@ def scrape_homepage_jobs():
                     continue
                 
                 # Check for job keywords
-                job_keywords = ['recruitment', 'notification', 'exam', 'vacancy', 'apply', 'admit', 'post', 'job', 'bharti']
+                job_keywords = ['recruitment', 'notification', 'exam', 'vacancy', 'apply', 'admit', 'post', 'job', 'bharti', 'resident', 'senior', 'vacancies']
                 if not any(kw in title.lower() for kw in job_keywords):
                     continue
                 
-                # Skip if already processed
+                # Check if already processed (in current batch)
                 if href in [j['link'] for j in jobs]:
                     continue
                 
-                # Now scrape the INDIVIDUAL JOB PAGE
-                details = scrape_individual_job_page(href)
-                
-                if details:
-                    job = {
-                        'title': title[:250],
-                        'link': href,
-                        'eligibility': details['eligibility'],
-                        'salary': details['salary'],
-                        'last_date': details['last_date'],
-                        'vacancies': details['vacancies'],
-                        'id': href  # Use URL as unique ID
-                    }
-                    jobs.append(job)
-                    logger.info(f"  ✓ {title[:50]}...")
-                
-                # Add small delay between requests
-                time.sleep(1)
-                
-            except Exception as e:
-                logger.debug(f"  Error: {e}")
-                continue
+                job_count += 1
+                job = {
+                    'title': title[:250],
+                    'link': href,
+                    'id': href,
+                    'eligibility': 'Check official website',
+                    'salary': 'As per norms',
+                    'last_date': 'Check official website',
+                    'vacancies': ''
+                }
+                jobs.append(job)
+                logger.info(f"  {job_count}. {title[:60]}...")
         
-        logger.info(f"  ✓ Total jobs with full details: {len(jobs)}")
+        logger.info(f"  ✓ Found TOP 5 jobs")
+        return jobs
         
     except Exception as e:
         logger.error(f"  Error: {str(e)[:50]}")
@@ -200,7 +193,7 @@ def scrape_homepage_jobs():
     return jobs
 
 def create_message(job):
-    """Create professional job post with all details"""
+    """Create professional job post"""
     
     message = f"""
 📢 <b>{job['title']}</b>
@@ -225,37 +218,60 @@ async def send_to_channel(message):
 
 async def check_and_post_jobs():
     logger.info("=" * 70)
-    logger.info("🤖 GOVT JOBS ALERT - HOURLY SCAN")
+    logger.info("🤖 GOVT JOBS ALERT - TOP 5 VACANCIES CHECK")
     logger.info("=" * 70)
     
     posted = load_posted_jobs()
-    logger.info(f"✓ Cache: {len(posted)} jobs")
+    logger.info(f"✓ Already posted: {len(posted)} jobs\n")
     
-    jobs = scrape_homepage_jobs()
+    # Get TOP 5 jobs from homepage
+    top_5_jobs = get_top_5_jobs()
     
-    if not jobs:
-        logger.warning("⚠️ No jobs found")
+    if not top_5_jobs:
+        logger.warning("⚠️ No jobs found on homepage")
         return
     
-    logger.info(f"✓ Found {len(jobs)} jobs with full details")
+    logger.info(f"\n✓ Checking TOP 5 jobs...\n")
     
     count = 0
-    for job in jobs:
-        if job['id'] not in posted:
-            logger.info(f"📤 Posting: {job['title'][:40]}...")
-            msg = create_message(job)
-            success = await send_to_channel(msg)
-            
-            if success:
-                save_posted_job(job['id'])
-                count += 1
-                await asyncio.sleep(2)
     
+    for i, job in enumerate(top_5_jobs, 1):
+        logger.info(f"Job {i}/5: {job['title'][:50]}...")
+        
+        # Check if already posted
+        if job['id'] in posted:
+            logger.info(f"  ⏭️  SKIPPED - Already posted\n")
+            continue
+        
+        logger.info(f"  ✅ NEW JOB - Scraping details...")
+        
+        # Scrape individual job page
+        details = scrape_individual_job_page(job['link'])
+        
+        # Update job with scraped details
+        job['eligibility'] = details['eligibility']
+        job['salary'] = details['salary']
+        job['last_date'] = details['last_date']
+        job['vacancies'] = details['vacancies']
+        
+        # POST IT (even if details couldn't be scraped)
+        logger.info(f"  📤 Posting to Telegram...")
+        message = create_message(job)
+        success = await send_to_channel(message)
+        
+        if success:
+            save_posted_job(job['id'])
+            count += 1
+            logger.info(f"  ✓ Posted successfully\n")
+            await asyncio.sleep(2)
+        else:
+            logger.error(f"  ✗ Failed to post\n")
+    
+    logger.info("=" * 70)
     if count == 0:
         logger.info("✓ No new jobs to post")
     else:
         logger.info(f"✓ Posted {count} NEW jobs! 🎉")
-    
     logger.info("=" * 70)
 
 def job_scheduler():
@@ -263,9 +279,8 @@ def job_scheduler():
 
 def main():
     logger.info("🚂 BOT STARTED")
-    logger.info("Source: govtjobsalerts.in")
-    logger.info("Mode: Scrapes individual job pages for FULL details")
-    logger.info("Schedule: Every hour")
+    logger.info("Mode: Check TOP 5 vacancies every hour")
+    logger.info("Action: Post if not already posted")
     logger.info("=" * 70)
     
     # Run every hour
