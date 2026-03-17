@@ -185,7 +185,6 @@ def get_top_5_jobs():
                 logger.info(f"  {job_count}. {title[:60]}...")
         
         logger.info(f"  ✓ Found TOP 5 jobs")
-        return jobs
         
     except Exception as e:
         logger.error(f"  Error: {str(e)[:50]}")
