@@ -23,6 +23,8 @@ def fetch_new_jobs():
     seen_guid = load_seen_guid()
     new_jobs = []
     feed = feedparser.parse(url)
+    raw = requests.get(url).text
+    print(raw[:500])
     print(feed.bozo)
     print(feed.bozo_exception)
     print(len(feed.entries))
