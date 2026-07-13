@@ -23,6 +23,9 @@ def fetch_new_jobs():
     seen_guid = load_seen_guid()
     new_jobs = []
     feed = feedparser.parse(url)
+    print(feed.bozo)
+    print(feed.bozo_exception)
+    print(len(feed.entries))
     print(len(feed.entries))
     for entries in feed.entries:
         if entries.guid in seen_guid:
