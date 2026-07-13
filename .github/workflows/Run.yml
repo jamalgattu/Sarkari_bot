@@ -20,10 +20,11 @@ jobs:
 
       - name: Run Parser
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          URL: ${{ secrets.URL }}
         run: python Parser.py
-
+        
       - name: Commit updated Checked.txt
         run: |
           git config user.name "github-actions[bot]"
