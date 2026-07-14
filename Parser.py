@@ -24,7 +24,7 @@ def fetch_new_jobs():
     new_jobs = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     feed = feedparser.parse(url, request_headers=headers)
-    raw = requests.get(url).text
+    raw = requests.get(url,headers=headers).text
     print(raw[:500])
     print(feed.bozo)
     print(feed.bozo_exception)
