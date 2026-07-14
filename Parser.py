@@ -22,7 +22,8 @@ def load_seen_guid():
 def fetch_new_jobs():
     seen_guid = load_seen_guid()
     new_jobs = []
-    feed = feedparser.parse(url)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    feed = feedparser.parse(url, request_headers=headers)
     raw = requests.get(url).text
     print(raw[:500])
     print(feed.bozo)
