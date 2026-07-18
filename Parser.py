@@ -27,8 +27,8 @@ def fetch_new_jobs():
     raw = requests.get(url,headers=headers).text
     print(raw[:500])
     print(feed.bozo)
-    print(feed.bozo_exception)
-    print(len(feed.entries))
+    if feed.bozo:
+        print(feed.bozo_exception)
     print(len(feed.entries))
     for entries in feed.entries:
         if entries.guid in seen_guid:
