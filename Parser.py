@@ -3,7 +3,7 @@ import os
 from bs4 import BeautifulSoup
 import requests
 
-url = "https://sarkariresult.com.cm/feed/"
+url = os.environ.get("URL")
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
