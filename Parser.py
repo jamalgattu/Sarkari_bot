@@ -35,7 +35,7 @@ def fetch_new_jobs():
             pass
         else:
             link=get_apply_link (entries.link)
-            line = f"📌Job:{entries.title}\n\n🔗Link:{link}"
+            line = f"📌Job/News🗣:{entries.title}\n\n🔗Link🔗:{link}"
             new_jobs.append(line)
             seen_guid.add(entries.guid)
     return new_jobs, seen_guid
