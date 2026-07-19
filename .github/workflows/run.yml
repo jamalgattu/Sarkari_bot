@@ -22,6 +22,7 @@ jobs:
 
       - name: Run Parser
         env:
+          URL: ${{ secrets.URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
         run: python Parser.py
