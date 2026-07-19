@@ -52,7 +52,7 @@ def get_apply_link(link):
     soup = BeautifulSoup(HTML, "html.parser")
     label = soup.find(string="Apply Online")
     if label is None:
-        return None
+        return "NOT FOUND, CRY ABOUT IT"
     a = label.find_next("a")
     return a["href"]
 
